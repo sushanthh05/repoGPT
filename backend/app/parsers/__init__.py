@@ -6,4 +6,4 @@ from app.parsers.repository_parser import (
     SUPPORTED_FILE_EXTENSIONS,
     RepositoryDiscoveryResult,
     discover_repository_files,
-)# Empty init
+)

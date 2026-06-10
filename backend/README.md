@@ -45,6 +45,20 @@ Returns the repositories that have already been cloned by the backend.
 
 This scans a cloned repository, filters files, reads file contents, and stores parsed documents in `backend/parsed_documents.json`.
 
+`GET /api/repositories/{repository_id}/documents`
+
+This returns the parsed document batch for one specific repository. Use this endpoint when the next phase needs to chunk only the selected repo, not every batch stored in the JSON file.
+
+## Phase 4 API
+
+`POST /api/repositories/{repository_id}/chunk`
+
+This loads the parsed documents for one repository, splits them with `RecursiveCharacterTextSplitter` using `chunk_size=1200` and `chunk_overlap=200`, stores the result in `backend/chunks.json`, and returns chunk statistics.
+
+`GET /api/repositories/{repository_id}/chunks`
+
+This returns the stored chunk batch for one repository.
+
 Response example:
 
 ```json
@@ -91,6 +105,7 @@ http://127.0.0.1:8000/docs
 - Cloned repositories live in `backend/repositories/`
 - Metadata is persisted in `backend/repository_metadata.json`
 - Parsed documents are persisted in `backend/parsed_documents.json`
+- Chunk batches are persisted in `backend/chunks.json`
 - Duplicate URLs are reused instead of cloned again
 
 ## Dependencies

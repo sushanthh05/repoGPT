@@ -17,3 +17,7 @@ def get_metadata_path() -> Path:
 
 def get_parsed_documents_path() -> Path:
     return get_backend_root() / "parsed_documents.json"
+
+
+def get_chunks_path() -> Path:
+    return get_backend_root() / "chunks.json"

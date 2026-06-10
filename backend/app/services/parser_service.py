@@ -65,6 +65,18 @@ class ParserService:
         self._save_parsed_documents(repository_id, documents, statistics)
         return documents, statistics
 
+    def get_parsed_repository_documents(self, repository_id: str) -> ParsedRepositoryDocuments | None:
+        for item in self._load_parsed_documents():
+            if item.get("repository_id") != repository_id:
+                continue
+
+            try:
+                return ParsedRepositoryDocuments.model_validate(item)
+            except Exception:
+                return None
+
+        return None
+
     def _save_parsed_documents(
         self,
         repository_id: str,
