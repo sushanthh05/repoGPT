@@ -53,3 +53,18 @@ class RepositoryResponse(BaseModel):
 class RepositoryListItem(BaseModel):
     repository_id: str
     repository_name: str
+
+
+class RepositoryParseResponse(BaseModel):
+    status: str
+    repository_id: str
+    documents_created: int
+    message: str
+
+
+class RepositoryParseStatistics(BaseModel):
+    total_files: int
+    parsed_files: int
+    ignored_files: int
+    ignored_directories: int
+    languages: list[str]

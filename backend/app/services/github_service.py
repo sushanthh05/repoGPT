@@ -95,6 +95,9 @@ class GitHubService:
     def list_repositories(self) -> list[RepositoryMetadata]:
         return list(self._metadata_cache)
 
+    def get_repository_by_id(self, repository_id: str) -> RepositoryMetadata | None:
+        return self._find_by_id(repository_id)
+
     def delete_repository(self, repository_id: str) -> None:
         repository = self._find_by_id(repository_id)
         if repository is None:

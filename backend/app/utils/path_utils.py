@@ -13,3 +13,7 @@ def get_repositories_root() -> Path:
 
 def get_metadata_path() -> Path:
     return get_backend_root() / "repository_metadata.json"
+
+
+def get_parsed_documents_path() -> Path:
+    return get_backend_root() / "parsed_documents.json"

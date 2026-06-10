@@ -4,3 +4,4 @@ __pycache__/
 backend/repositories/*
 !backend/repositories/.gitkeep
 backend/repository_metadata.json
+backend/parsed_documents.json
