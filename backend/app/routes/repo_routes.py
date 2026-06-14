@@ -164,3 +164,29 @@ def test_search(repository_id: str, request: SearchRequest, indexing_service: In
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+from app.services.retrieval_service import RetrievalService
+from app.retrieval.retrieval_models import SearchRequest as RetrievalSearchRequest, SearchResponse, ContextResponse
+
+def get_retrieval_service() -> RetrievalService:
+    return RetrievalService()
+
+@router.post("/{repository_id}/search", response_model=SearchResponse)
+def search_repository(repository_id: str, request: RetrievalSearchRequest, retrieval_service: RetrievalService = Depends(get_retrieval_service)):
+    try:
+        results = retrieval_service.search(repository_id, request.query)
+        return SearchResponse(results=results)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+@router.post("/{repository_id}/context", response_model=ContextResponse)
+def build_context(repository_id: str, request: RetrievalSearchRequest, retrieval_service: RetrievalService = Depends(get_retrieval_service)):
+    try:
+        context, sources = retrieval_service.build_context(repository_id, request.query)
+        return ContextResponse(context=context, sources=sources)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
