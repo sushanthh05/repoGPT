@@ -1,30 +1,31 @@
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
+from sqlalchemy.orm import Session
 from pathlib import Path
-from typing import Any
 
 from app.chunkers.chunk_metadata import ChunkMetadata
 from app.chunkers.document_chunker import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, chunk_document
 from app.models.chunk import Chunk, ChunkBatch, ChunkingStatistics
-from app.models.document import Document, ParsedRepositoryDocuments
 from app.services.parser_service import ParserService
-from app.utils.path_utils import get_chunks_path
-
+from app.database.models.models import ChunkDB
 
 class ChunkingService:
-    def __init__(self) -> None:
-        self.parser_service = ParserService()
-        self.chunks_path = get_chunks_path()
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.parser_service = ParserService(db)
 
     def chunk_repository(self, repository_id: str) -> tuple[list[Chunk], ChunkingStatistics]:
         parsed_documents = self.parser_service.get_parsed_repository_documents(repository_id)
         if parsed_documents is None:
             raise FileNotFoundError("Parsed documents not found")
 
+        self.db.query(ChunkDB).filter(ChunkDB.repository_id == repository_id).delete()
+        self.db.commit()
+
         chunks: list[Chunk] = []
+        chunks_db_list = []
         per_document_chunk_counts: list[int] = []
 
         for document in parsed_documents.documents:
@@ -35,6 +36,8 @@ class ChunkingService:
                 if not chunk_text.strip():
                     continue
 
+                chunk_id = f"chunk_{uuid.uuid4().hex[:8]}"
+
                 metadata = ChunkMetadata(
                     repository_id=document.repository_id,
                     document_id=document.document_id,
@@ -43,23 +46,36 @@ class ChunkingService:
                     language=document.language,
                     chunk_index=chunk_index,
                 )
-                chunks.append(
-                    Chunk(
-                        chunk_id=f"chunk_{uuid.uuid4().hex[:8]}",
-                        document_id=document.document_id,
-                        repository_id=document.repository_id,
-                        chunk_index=chunk_index,
-                        content=chunk_text,
-                        source_file=document.file_path,
-                        language=document.language,
-                        metadata={
-                            **metadata.as_dict(),
-                            "chunk_size": DEFAULT_CHUNK_SIZE,
-                            "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
-                            "content_length": len(chunk_text),
-                        },
-                    )
+                
+                chunk_model = Chunk(
+                    chunk_id=chunk_id,
+                    document_id=document.document_id,
+                    repository_id=document.repository_id,
+                    chunk_index=chunk_index,
+                    content=chunk_text,
+                    source_file=document.file_path,
+                    language=document.language,
+                    metadata={
+                        **metadata.as_dict(),
+                        "chunk_size": DEFAULT_CHUNK_SIZE,
+                        "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
+                        "content_length": len(chunk_text),
+                    },
                 )
+                chunks.append(chunk_model)
+                
+                chunks_db_list.append(ChunkDB(
+                    id=chunk_id,
+                    repository_id=document.repository_id,
+                    document_id=document.document_id,
+                    chunk_index=chunk_index,
+                    content=chunk_text,
+                    language=document.language
+                ))
+
+        if chunks_db_list:
+            self.db.bulk_save_objects(chunks_db_list)
+            self.db.commit()
 
         chunks_generated = len(chunks)
         documents_processed = len(parsed_documents.documents)
@@ -77,43 +93,72 @@ class ChunkingService:
             chunk_overlap=DEFAULT_CHUNK_OVERLAP,
         )
 
-        self._save_chunks(repository_id, chunks, statistics)
         return chunks, statistics
 
     def get_chunk_batch(self, repository_id: str) -> ChunkBatch | None:
-        for item in self._load_chunk_batches():
-            if item.get("repository_id") != repository_id:
-                continue
+        chunks_db = self.db.query(ChunkDB).filter(ChunkDB.repository_id == repository_id).order_by(ChunkDB.document_id, ChunkDB.chunk_index).all()
+        if not chunks_db:
+            return None
 
-            try:
-                return ChunkBatch.model_validate(item)
-            except Exception:
-                return None
+        # Fetch documents to reconstruct metadata
+        parsed_documents = self.parser_service.get_parsed_repository_documents(repository_id)
+        doc_map = {d.document_id: d for d in parsed_documents.documents} if parsed_documents else {}
 
-        return None
+        chunks = []
+        doc_ids = set()
+        total_content_length = 0
 
-    def _save_chunks(self, repository_id: str, chunks: list[Chunk], statistics: ChunkingStatistics) -> None:
-        payload = self._load_chunk_batches()
-        payload = [item for item in payload if item.get("repository_id") != repository_id]
-        payload.append(
-            ChunkBatch(
-                repository_id=repository_id,
-                chunked_at=datetime.now(timezone.utc).isoformat(),
-                statistics=statistics,
-                chunks=chunks,
-            ).model_dump(mode="json")
+        for c in chunks_db:
+            doc = doc_map.get(c.document_id)
+            doc_ids.add(c.document_id)
+            
+            file_path = doc.file_path if doc else ""
+            filename = Path(file_path).name if file_path else ""
+
+            metadata = ChunkMetadata(
+                repository_id=c.repository_id,
+                document_id=c.document_id,
+                file_path=file_path,
+                filename=filename,
+                language=c.language or "Unknown",
+                chunk_index=c.chunk_index,
+            )
+
+            chunk_model = Chunk(
+                chunk_id=c.id,
+                document_id=c.document_id,
+                repository_id=c.repository_id,
+                chunk_index=c.chunk_index,
+                content=c.content,
+                source_file=file_path,
+                language=c.language or "Unknown",
+                created_at=str(c.created_at) if c.created_at else datetime.now(timezone.utc).isoformat(),
+                metadata={
+                    **metadata.as_dict(),
+                    "chunk_size": DEFAULT_CHUNK_SIZE,
+                    "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
+                    "content_length": len(c.content),
+                },
+            )
+            chunks.append(chunk_model)
+            total_content_length += len(c.content)
+
+        chunks_generated = len(chunks)
+        documents_processed = len(doc_ids)
+        average_chunk_size = int(total_content_length / chunks_generated) if chunks_generated else 0
+
+        statistics = ChunkingStatistics(
+            documents_processed=documents_processed,
+            chunks_generated=chunks_generated,
+            average_chunk_size=average_chunk_size,
+            largest_file_chunks=0, # Approximation for now
+            chunk_size=DEFAULT_CHUNK_SIZE,
+            chunk_overlap=DEFAULT_CHUNK_OVERLAP,
         )
-        self.chunks_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    def _load_chunk_batches(self) -> list[dict[str, Any]]:
-        if not self.chunks_path.exists():
-            return []
-
-        try:
-            raw_payload = json.loads(self.chunks_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-
-        if isinstance(raw_payload, list):
-            return [item for item in raw_payload if isinstance(item, dict)]
-        return []
+        return ChunkBatch(
+            repository_id=repository_id,
+            chunked_at=datetime.now(timezone.utc).isoformat(),
+            statistics=statistics,
+            chunks=chunks
+        )

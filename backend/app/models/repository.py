@@ -21,7 +21,8 @@ class RepositoryMetadata(BaseModel):
     repository_name: str
     repository_url: str
     local_path: str
-    clone_timestamp: str
+    created_at: datetime | str
+    updated_at: datetime | str | None = None
     status: Literal["cloned", "exists", "failed"]
 
     @classmethod
@@ -38,7 +39,8 @@ class RepositoryMetadata(BaseModel):
             repository_name=repository_name,
             repository_url=repository_url,
             local_path=local_path,
-            clone_timestamp=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             status=status,
         )
 

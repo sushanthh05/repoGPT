@@ -5,3 +5,22 @@ backend/repositories/*
 !backend/repositories/.gitkeep
 backend/repository_metadata.json
 backend/parsed_documents.json
+chat.json
+PROJECT_CONTEXT.md
+
+# Virtual environments
+backend/venv/
+.venv/
+
+# Database files
+backend/repogpt.db
+backend/data/
+
+# Temporary and test files
+backend/chunks.json
+backend/test_chunks_json.py
+pyrightconfig.json
+
+# IDE settings
+.vscode/
+backend/.vscode/

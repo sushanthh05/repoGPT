@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy.orm import Session
 
 from app.models.document import ParsedRepositoryDocuments
 from app.models.repository import (
@@ -11,15 +12,31 @@ from app.models.chunk import ChunkBatch, RepositoryChunkResponse
 from app.services.chunking_service import ChunkingService
 from app.services.github_service import GitHubService
 from app.services.parser_service import ParserService
+from app.services.indexing_service import IndexingService
+from app.embeddings.embedding_service import EmbeddingService
+from app.vectorstore.vector_store_service import VectorStoreService
+from app.database.postgres import get_db
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/repositories", tags=["repositories"])
-github_service = GitHubService()
-parser_service = ParserService()
-chunking_service = ChunkingService()
+
+def get_github_service(db: Session = Depends(get_db)) -> GitHubService:
+    return GitHubService(db)
+
+def get_parser_service(db: Session = Depends(get_db)) -> ParserService:
+    return ParserService(db)
+
+def get_chunking_service(db: Session = Depends(get_db)) -> ChunkingService:
+    return ChunkingService(db)
+
+def get_indexing_service(db: Session = Depends(get_db)) -> IndexingService:
+    embedding_service = EmbeddingService()
+    vector_store = VectorStoreService()
+    return IndexingService(db, embedding_service, vector_store)
 
 
 @router.post("/analyze", response_model=RepositoryResponse)
-def analyze_repository(payload: RepositoryAnalyzeRequest):
+def analyze_repository(payload: RepositoryAnalyzeRequest, github_service: GitHubService = Depends(get_github_service)):
     try:
         repository = github_service.clone_repository(payload.repo_url)
     except ValueError as exc:
@@ -44,7 +61,7 @@ def analyze_repository(payload: RepositoryAnalyzeRequest):
 
 
 @router.get("", response_model=list[RepositoryListItem])
-def list_repositories():
+def list_repositories(github_service: GitHubService = Depends(get_github_service)):
     repositories = github_service.list_repositories()
     return [
         RepositoryListItem(repository_id=item.repository_id, repository_name=item.repository_name)
@@ -53,7 +70,7 @@ def list_repositories():
 
 
 @router.post("/{repository_id}/parse", response_model=RepositoryParseResponse)
-def parse_repository(repository_id: str):
+def parse_repository(repository_id: str, parser_service: ParserService = Depends(get_parser_service)):
     try:
         documents, statistics = parser_service.parse_repository(repository_id)
     except FileNotFoundError as exc:
@@ -70,7 +87,7 @@ def parse_repository(repository_id: str):
 
 
 @router.get("/{repository_id}/documents", response_model=ParsedRepositoryDocuments)
-def get_parsed_documents(repository_id: str):
+def get_parsed_documents(repository_id: str, parser_service: ParserService = Depends(get_parser_service)):
     parsed_documents = parser_service.get_parsed_repository_documents(repository_id)
     if parsed_documents is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parsed documents not found")
@@ -79,7 +96,7 @@ def get_parsed_documents(repository_id: str):
 
 
 @router.post("/{repository_id}/chunk", response_model=RepositoryChunkResponse)
-def chunk_repository(repository_id: str):
+def chunk_repository(repository_id: str, chunking_service: ChunkingService = Depends(get_chunking_service)):
     try:
         chunks, statistics = chunking_service.chunk_repository(repository_id)
     except FileNotFoundError as exc:
@@ -98,7 +115,7 @@ def chunk_repository(repository_id: str):
 
 
 @router.get("/{repository_id}/chunks", response_model=ChunkBatch)
-def get_chunk_batch(repository_id: str):
+def get_chunk_batch(repository_id: str, chunking_service: ChunkingService = Depends(get_chunking_service)):
     chunk_batch = chunking_service.get_chunk_batch(repository_id)
     if chunk_batch is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chunks not found")
@@ -109,3 +126,41 @@ def get_chunk_batch(repository_id: str):
 @router.get("/health")
 def repo_health():
     return {"status": "Repository routing works"}
+
+class SearchRequest(BaseModel):
+    query: str
+
+@router.post("/{repository_id}/index")
+def index_repository(repository_id: str, indexing_service: IndexingService = Depends(get_indexing_service)):
+    try:
+        result = indexing_service.index_repository(repository_id)
+        return result
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+@router.post("/{repository_id}/test-search")
+def test_search(repository_id: str, request: SearchRequest, indexing_service: IndexingService = Depends(get_indexing_service)):
+    try:
+        embedding = indexing_service.embedding_service.generate_embedding(request.query)
+        results = indexing_service.vector_store.search_chunks(repository_id, embedding)
+        
+        # Format the results dynamically
+        formatted_results = []
+        if results and "metadatas" in results and results["metadatas"]:
+            for i, metadata in enumerate(results["metadatas"][0]):
+                score = results["distances"][0][i] if "distances" in results and results["distances"] else 0.0
+                file_path = metadata.get("file_path", "Unknown")
+                formatted_results.append({
+                    "file_path": file_path,
+                    "score": score
+                })
+        
+        return formatted_results
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
