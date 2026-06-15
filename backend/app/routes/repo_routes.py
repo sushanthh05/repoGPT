@@ -190,3 +190,25 @@ def build_context(repository_id: str, request: RetrievalSearchRequest, retrieval
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+from app.services.chat_service import ChatService
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    question: str
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[dict]
+
+def get_chat_service() -> ChatService:
+    return ChatService()
+
+@router.post("/{repository_id}/chat", response_model=ChatResponse)
+def chat_repository(repository_id: str, request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)):
+    try:
+        answer, sources = chat_service.chat(repository_id, request.question)
+        return ChatResponse(answer=answer, sources=sources)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc

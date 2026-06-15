@@ -23,3 +23,6 @@ langchain-community
 psycopg2-binary
 sqlalchemy
 pydantic-settings
+
+# Phase 7 requirements
+groq
