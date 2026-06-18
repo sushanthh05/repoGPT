@@ -212,3 +212,22 @@ def chat_repository(repository_id: str, request: ChatRequest, chat_service: Chat
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+from app.services.repository_analysis_service import RepositoryAnalysisService
+from app.analysis.analysis_models import RepositoryInsights
+
+def get_repository_analysis_service(db: Session = Depends(get_db)) -> RepositoryAnalysisService:
+    return RepositoryAnalysisService(db)
+
+@router.post("/{repository_id}/analyze", response_model=RepositoryInsights)
+def analyze_repository_profile(
+    repository_id: str,
+    analysis_service: RepositoryAnalysisService = Depends(get_repository_analysis_service)
+):
+    try:
+        insights = analysis_service.generate_insights(repository_id)
+        return insights
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc

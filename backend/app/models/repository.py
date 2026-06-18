@@ -23,7 +23,7 @@ class RepositoryMetadata(BaseModel):
     local_path: str
     created_at: datetime | str
     updated_at: datetime | str | None = None
-    status: Literal["cloned", "exists", "failed"]
+    status: str
 
     @classmethod
     def create(
@@ -32,7 +32,7 @@ class RepositoryMetadata(BaseModel):
         repository_name: str,
         repository_url: str,
         local_path: str,
-        status: Literal["cloned", "exists", "failed"] = "cloned",
+        status: str = "cloned",
     ) -> "RepositoryMetadata":
         return cls(
             repository_id=repository_id,

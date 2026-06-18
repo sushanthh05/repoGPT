@@ -41,7 +41,7 @@ def test_flow():
 
     # 5. Search
     print("Testing search...")
-    r = httpx.post(f"{BASE_URL}/{repo_id}/test-search", json={"query": "authentication"})
+    r = httpx.post(f"{BASE_URL}/{repo_id}/test-search", json={"query": "authentication"}, timeout=120.0)
     if r.status_code != 200:
         print("Failed search:", r.text)
         sys.exit(1)

@@ -1,5 +1,9 @@
 import os
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+# Force .env values to override any system-level environment variables (like a global DATABASE_URL)
+load_dotenv(".env", override=True)
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./repogpt.db"
