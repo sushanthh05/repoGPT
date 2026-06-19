@@ -199,6 +199,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[dict]
+    confidence: int
 
 def get_chat_service() -> ChatService:
     return ChatService()
@@ -206,8 +207,8 @@ def get_chat_service() -> ChatService:
 @router.post("/{repository_id}/chat", response_model=ChatResponse)
 def chat_repository(repository_id: str, request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)):
     try:
-        answer, sources = chat_service.chat(repository_id, request.question)
-        return ChatResponse(answer=answer, sources=sources)
+        answer, sources, confidence = chat_service.chat(repository_id, request.question)
+        return ChatResponse(answer=answer, sources=sources, confidence=confidence)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
